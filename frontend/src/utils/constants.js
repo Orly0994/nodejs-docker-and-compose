@@ -1,5 +1,5 @@
 export const URL = process.env.NODE_ENV === 'production' 
-  ? "https://api.orly.kupi.nomorepartiessbs.ru/"
+  ? "https://api.orly.kupi.nomorepartiessbs.ru"
   : "http://localhost:4000";
 
 export const MINIMUM_PASSWORD_LENGTH = 3;
