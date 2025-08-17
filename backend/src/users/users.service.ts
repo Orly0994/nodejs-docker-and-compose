@@ -1,136 +1,133 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
 import {
-  FindOptionsRelations,
-  FindOptionsSelect,
-  FindOptionsWhere,
-  Repository,
-  ILike,
-} from 'typeorm';
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { HashService } from 'src/hash/hash.service';
+import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
-import { FindUserDto } from './dto/find-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
-import { ServerException } from '../exceptions/server.exception';
-import { ErrorCode } from '../exceptions/error-codes';
-import { WishesService } from '../wishes/wishes.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
-    private usersRepository: Repository<User>,
-    @Inject(forwardRef(() => WishesService))
-    private wishesService: WishesService,
+    private readonly userRepository: Repository<User>,
+    private readonly hashService: HashService,
   ) {}
 
-  async findOne(
-    options: FindOptionsWhere<User>,
-    fields?: FindOptionsSelect<User>,
-    join?: FindOptionsRelations<User>,
-  ): Promise<User> {
-    return this.usersRepository.findOne({
-      where: options,
-      select: fields,
-      relations: join,
-    });
-  }
-
-  async findMany(query: string): Promise<FindUserDto[]> {
-    return this.usersRepository.find({
+  async create(createUserDto: CreateUserDto): Promise<User> {
+    const user_in_db = await this.userRepository.findOne({
       where: [
-        { email: ILike(`%${query}%`) },
-        { username: ILike(`%${query}%`) },
+        { email: createUserDto.email },
+        { name: createUserDto.name }
       ],
     });
+    
+    if (user_in_db) {
+      throw new ForbiddenException(
+        'Пользователь с таким именем или email уже существует',
+      );
+    }
+    
+    const user = this.userRepository.create(createUserDto);
+    return this.userRepository.save(user);
   }
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    return this.usersRepository.save(createUserDto);
+  async findAll(): Promise<User[]> {
+    return this.userRepository.find();
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
-    await this.usersRepository.update({ id }, updateUserDto);
-    return this.usersRepository.findOneBy({ id });
-  }
-
-  async remove(id: number) {
-    return this.usersRepository.delete({ id });
-  }
-
-  async createUser(createUserDto: CreateUserDto): Promise<User> {
-    const { password, email, username, ...rest } = createUserDto;
-
-    const isExists = await this.usersRepository.findOne({
-      where: [{ email }, { username }],
+  async findById(id: number): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { id: id },
     });
-
-    if (isExists) {
-      throw new ServerException(ErrorCode.UserAlreadyExists);
-    }
-
-    const hash = await bcrypt.hash(password, 10);
-
-    return this.create({
-      ...rest,
-      password: hash,
-      email,
-      username,
-    });
-  }
-
-  async updateUser(
-    id: number,
-    updateUserDto: UpdateUserDto,
-  ): Promise<FindUserDto> {
-    const { email, username } = updateUserDto;
-
-    const user = await this.usersRepository.findOneBy({ id });
-
-    // проверяем, что пользователь действительно пытается изменить свои данные
-    // и таких данных не существует у других пользователей
-    if (username && user.username !== username.toLowerCase()) {
-      const isExists = await this.usersRepository.findOneBy({ username });
-
-      if (isExists) {
-        throw new ServerException(ErrorCode.UserAlreadyExists);
-      }
-    }
-
-    // проверяем, что пользователь действительно пытается изменить свои данные
-    // и таких данных не существует у других пользователей
-    if (email && user.email !== email.toLowerCase()) {
-      const isExists = await this.usersRepository.findOneBy({ email });
-
-      if (isExists) {
-        throw new ServerException(ErrorCode.UserAlreadyExists);
-      }
-    }
-
-    const { password, ...rest } = updateUserDto;
-    if (password) {
-      const hash = await bcrypt.hash(password, 10);
-      const user = { ...rest, password: hash };
-      return this.update(id, user);
-    }
-
-    return this.update(id, updateUserDto);
-  }
-
-  async getOwnWishes(id: number) {
-    return this.wishesService.findMany({ owner: { id } });
-  }
-
-  async getUserWishes(username: string) {
-    const user = await this.findOne({ username });
 
     if (!user) {
-      throw new ServerException(ErrorCode.UserNotFound);
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return this.wishesService.findMany({
-      owner: { id: user.id },
+    return user;
+  }
+
+  async findByName(name: string): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { name: name },
     });
+
+    if (!user) {
+      throw new NotFoundException(`User with name ${name} not found`);
+    }
+
+    return user;
+  }
+
+  async findByFields(query: string): Promise<User[]> {
+    const users = await this.userRepository.find({
+      where: [{ name: query }, { email: query }],
+    });
+    return users;
+  }
+
+  async updateOne(
+    id: number,
+    updateUserDto: UpdateUserDto,
+    userId: number,
+  ): Promise<User> {
+    if (id != userId) {
+      throw new ForbiddenException('You are not the owner of this profile');
+    }
+    
+    if (updateUserDto.email || updateUserDto.name) {
+      const existingUser = await this.userRepository
+        .createQueryBuilder('user')
+        .where('(user.email = :email OR user.name = :name)', {
+          email: updateUserDto.email,
+          name: updateUserDto.name,
+        })
+        .andWhere('user.id != :id', { id })
+        .getOne();
+      
+      if (existingUser) {
+        throw new ForbiddenException(
+          'Пользователь с таким именем или email уже существует',
+        );
+      }
+    }
+
+    if (updateUserDto.password) {
+      updateUserDto.password = await this.hashService.hashPassword(
+        updateUserDto.password,
+      );
+    }
+    
+    const user = await this.userRepository.findOne({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    Object.assign(user, updateUserDto);
+
+    return this.userRepository.save(user);
+  }
+
+  async removeOne(id: number, userId: number): Promise<void> {
+    if (id != userId) {
+      throw new ForbiddenException('You are not the owner of this profi;e');
+    }
+    const result = await this.userRepository.delete(id);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+  }
+
+  findOne(id: number) {
+    return `This action returns a #${id} wish`;
   }
 }

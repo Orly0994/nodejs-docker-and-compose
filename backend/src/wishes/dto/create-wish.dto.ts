@@ -1,12 +1,22 @@
-import { OmitType } from '@nestjs/swagger';
-import { Wish } from '../entities/wish.entity';
+import { IsString, IsUrl, Length, Matches } from 'class-validator';
 
-export class CreateWishDto extends OmitType(Wish, [
-  'id',
-  'createdAt',
-  'updatedAt',
-  'offers',
-  'copied',
-]) {}
+export class CreateWishDto {
+  @IsString()
+  @Length(1, 250)
+  name: string;
 
-export class CreateWishRequestDto extends OmitType(CreateWishDto, ['owner']) {}
+  @IsUrl()
+  link: string;
+
+  image: string;
+
+  @IsString()
+  @Matches(/^\d+(\.\d{1,2})?$/, {
+    message: 'Amount must be a valid number with up to 2 decimal places',
+  })
+  price: number;
+
+  @IsString()
+  @Length(1, 1024)
+  description: string;
+}

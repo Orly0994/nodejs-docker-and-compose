@@ -1,84 +1,32 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  OneToMany,
-  PrimaryGeneratedColumn,
-  UpdateDateColumn,
-} from 'typeorm';
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, IsUrl, IsOptional, Length } from 'class-validator';
-import { Offer } from '../../offers/entities/offer.entity';
-import { Wish } from '../../wishes/entities/wish.entity';
-import { Wishlist } from '../../wishlists/entities/wishlist.entity';
-import { ColumnLowercaseTransformer } from '../../transformers/column-lowercase-transformer';
+import { BaseEntity } from 'src/common/entities/base.entity';
+import { Offer } from 'src/offers/entities/offer.entity';
+import { Wish } from 'src/wishes/entities/wish.entity';
+import { Wishlist } from 'src/wishlists/entities/wishlist.entity';
+import { Column, Entity, OneToMany } from 'typeorm';
 
 @Entity()
-export class User {
-  @ApiProperty({ description: 'Уникальный id пользователя' })
-  @PrimaryGeneratedColumn()
-  id: number;
+export class User extends BaseEntity {
+  @Column({ length: 30, nullable: false, unique: true })
+  name: string;
 
-  @ApiProperty({ description: 'Дата создания пользователя' })
-  @CreateDateColumn()
-  createdAt: Date;
+  @Column({ length: 200, default: 'Пока ничего не рассказал о себе' })
+  about: string;
 
-  @ApiProperty({ description: 'Дата обновления пользователя' })
-  @UpdateDateColumn()
-  updatedAt: Date;
+  @Column({ default: 'https://i.pravatar.cc/300' })
+  avatar: string;
 
-  @ApiProperty({ description: 'Имя пользователя', example: 'user' })
-  @IsString()
-  @Length(2, 30)
-  @Column({
-    unique: true,
-    transformer: new ColumnLowercaseTransformer(),
-  })
-  username: string; // уникальное имя пользователя
+  @Column({ unique: true })
+  email: string;
 
-  @ApiProperty({
-    description: 'Описание пользователя',
-    example: 'Пока ничего не рассказал о себе',
-  })
-  @IsString()
-  @IsOptional()
-  @Length(2, 200)
-  @Column({
-    default: 'Пока ничего не рассказал о себе',
-  })
-  about: string; // информация о пользователе
-
-  @ApiProperty({
-    description: 'Аватар пользователя',
-    example: 'https://i.pravatar.cc/300',
-  })
-  @IsUrl()
-  @IsOptional()
-  @Column({
-    default: 'https://i.pravatar.cc/300',
-  })
-  avatar: string; // ссылка на аватар
-
-  @ApiProperty({ description: 'Email пользователя', example: 'test@test.zone' })
-  @IsEmail()
-  @Column({
-    unique: true,
-    transformer: new ColumnLowercaseTransformer(),
-    select: false,
-  })
-  email: string; // уникальный адрес электронной почты пользователя
-
-  @ApiProperty({ description: 'Пароль пользователя', example: 'testpassword' })
-  @Column({ select: false })
-  @IsString()
+  @Column({ nullable: false })
   password: string;
 
   @OneToMany(() => Wish, (wish) => wish.owner)
-  wishes: Wish[]; // список желаемых подарков
+  wishes: Wish[];
 
   @OneToMany(() => Offer, (offer) => offer.user)
-  offers: Offer[]; // содержит список подарков, на которые скидывается пользователь
+  offers: Offer[];
 
-  @OneToMany(() => Wishlist, (wishlist) => wishlist.owner)
-  wishlists: Wishlist[]; // содержит список вишлистов, которые создал пользователь
+  @OneToMany(() => Wishlist, (wishlist) => wishlist.user)
+  wishlists: Wishlist[];
 }

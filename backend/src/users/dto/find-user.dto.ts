@@ -1,16 +1,6 @@
-import { ApiProperty, OmitType } from '@nestjs/swagger';
-import { User } from '../entities/user.entity';
+import { IsString } from 'class-validator';
 
-export class FindUserDtoRequest {
-  @ApiProperty({ description: 'Имя или email пользователя', example: 'user' })
+export class FindUsersDto {
+  @IsString()
   query: string;
 }
-
-export class FindUserDto extends OmitType(User, ['email', 'password']) {}
-
-export class FindOwnUserDto extends OmitType(User, [
-  'wishes',
-  'offers',
-  'wishlists',
-  'password',
-]) {}

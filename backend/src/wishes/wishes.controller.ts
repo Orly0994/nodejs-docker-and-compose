@@ -4,165 +4,103 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
-  Req,
+  Request,
   UseGuards,
-  HttpStatus,
 } from '@nestjs/common';
-import { Request } from 'express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { plainToInstance } from 'class-transformer';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { AuthenticatedRequest } from 'src/auth/interfaces/authenticated-request.interface';
+import { UsersService } from 'src/users/users.service';
+import { CreateWishDto } from './dto/create-wish.dto';
+import { UpdateWishDto } from './dto/update-wish.dto';
+import { WishResponseDto } from './dto/wish-response.dto';
 import { WishesService } from './wishes.service';
-import { Wish } from './entities/wish.entity';
-import {
-  FindWishDto,
-  LastWishResponseDto,
-  TopWishResponseDto,
-} from './dto/find-wish.dto';
-import { CreateWishRequestDto } from './dto/create-wish.dto';
-import { UpdateWishRequestDto } from './dto/update-wish.dto';
-import { JwtGuard } from '../guards/jwt.guard';
-import { NoValidUserResponseDto } from '../users/dto/no-valid-user-response.dto';
 
-const TOP_WISHES_COUNT = Object.freeze(20);
-const LAST_WISHES_COUNT = Object.freeze(40);
-
-@ApiBearerAuth()
-@ApiTags('wishes')
-@ApiUnauthorizedResponse({
-  description: 'Unauthorized',
-  type: NoValidUserResponseDto,
-})
 @Controller('wishes')
 export class WishesController {
-  constructor(private wishesService: WishesService) {}
+  constructor(
+    private readonly wishesService: WishesService,
+    private readonly usersService: UsersService,
+  ) {}
 
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Возвращает 40 подарков, добавленных недавно',
-    type: [LastWishResponseDto],
-  })
-  @Get('last')
-  findLast(): Promise<LastWishResponseDto[]> {
-    return this.wishesService.findMany({}, LAST_WISHES_COUNT, {
-      createdAt: 'DESC',
-    });
-  }
-
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Возвращает 20 популярных подарков',
-    type: [TopWishResponseDto],
-  })
-  @Get('top')
-  findTop(): Promise<TopWishResponseDto[]> {
-    return this.wishesService.findMany({}, TOP_WISHES_COUNT, {
-      copied: 'DESC',
-    });
-  }
-
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Копирует подарок текущему пользователю по заданному id',
-    type: [Wish],
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id подарка',
-    example: '1',
-  })
-  @UseGuards(JwtGuard)
-  @Post(':id/copy')
-  async copyWish(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.wishesService.copyWish(req.user.id, id);
-  }
-
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Удаляет подарок с заданным id',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id подарка',
-    example: '1',
-  })
-  @UseGuards(JwtGuard)
-  @Delete(':id')
-  async removeById(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    await this.wishesService.removeWish(req.user.id, id);
-  }
-
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Обновляет данные подарка с заданным id',
-    type: Wish,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id подарка',
-    example: '1',
-  })
-  @ApiBody({
-    description: 'Изменяемые данные подарка',
-    type: UpdateWishRequestDto,
-  })
-  @UseGuards(JwtGuard)
-  @Patch(':id')
-  async updateById(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateWishDto: UpdateWishRequestDto,
-  ) {
-    return this.wishesService.updateWish(req.user.id, id, updateWishDto);
-  }
-
-  @ApiResponse({
-    description: 'Возвращает подарок по указанному id',
-    type: FindWishDto,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id подарка',
-    example: '1',
-  })
-  @UseGuards(JwtGuard)
-  @Get(':id')
-  async findOne(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.wishesService.findWish(id);
-  }
-
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Возвращает созданный подарок',
-    type: Wish,
-  })
-  @ApiBody({
-    description: 'Данные подарка',
-    type: CreateWishRequestDto,
-  })
+  @UseGuards(JwtAuthGuard)
   @Post()
-  @UseGuards(JwtGuard)
   async create(
-    @Req() req: Request & { user: { id: number } },
-    @Body() createWishDto: CreateWishRequestDto,
-  ): Promise<Wish> {
-    return this.wishesService.createWish(req.user.id, createWishDto);
+    @Request() req: AuthenticatedRequest,
+    @Body() createWishDto: CreateWishDto,
+  ): Promise<void> {
+    const user = await this.usersService.findById(req.user.userId);
+    this.wishesService.create(createWishDto, user);
+  }
+
+  @Get('last')
+  async getLastWish(): Promise<WishResponseDto[]> {
+    const wishes = await this.wishesService.getLast();
+    return plainToInstance(WishResponseDto, wishes, {
+      excludeExtraneousValues: true,
+      groups: ['common'],
+    });
+  }
+
+  @Get('top')
+  async getTopWish(): Promise<WishResponseDto[]> {
+    const wishes = await this.wishesService.getTop();
+    return plainToInstance(WishResponseDto, wishes, {
+      excludeExtraneousValues: true,
+      groups: ['common'],
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findOne(@Param('id') id: string): Promise<WishResponseDto> {
+    const wish = await this.wishesService.findById(+id);
+    return plainToInstance(WishResponseDto, wish, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateWishDto: UpdateWishDto,
+  ): Promise<WishResponseDto> {
+    const wish = await this.wishesService.updateOne(
+      +id,
+      updateWishDto,
+      req.user.userId,
+    );
+    return plainToInstance(WishResponseDto, wish, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  remove(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.wishesService.removeOne(+id, req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/copy')
+  async copy(
+    @Request() req: AuthenticatedRequest,
+    @Body() id: number,
+  ): Promise<void> {
+    const user = await this.usersService.findById(req.user.userId);
+    const wish = await this.wishesService.findById(id);
+
+    const сreateWishDto = plainToInstance(CreateWishDto, wish, {
+      excludeExtraneousValues: true,
+    });
+
+    this.wishesService.create(сreateWishDto, user);
   }
 }

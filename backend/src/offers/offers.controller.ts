@@ -1,81 +1,75 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
-  Post,
   Param,
-  ParseIntPipe,
-  Req,
+  Patch,
+  Post,
+  Request,
   UseGuards,
-  HttpStatus,
 } from '@nestjs/common';
-import { OffersService } from './offers.service';
+import { plainToInstance } from 'class-transformer';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { AuthenticatedRequest } from 'src/auth/interfaces/authenticated-request.interface';
+import { UsersService } from 'src/users/users.service';
+import { CreateOfferDto } from './dto/create-offer.dto';
+import { offerResponseDto } from './dto/offer-response.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Offer } from './entities/offer.entity';
-import { CreateOfferRequestDto } from './dto/create-offer.dto';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
-import { Request } from 'express';
-import { JwtGuard } from '../guards/jwt.guard';
-import { NoValidUserResponseDto } from '../users/dto/no-valid-user-response.dto';
-import { FindOfferDto } from './dto/find-offer.dto';
+import { OffersService } from './offers.service';
 
-@ApiBearerAuth()
-@ApiTags('offers')
-@UseGuards(JwtGuard)
-@ApiUnauthorizedResponse({
-  description: 'Unauthorized',
-  type: NoValidUserResponseDto,
-})
 @Controller('offers')
 export class OffersController {
-  constructor(private offersService: OffersService) {}
+  constructor(
+    private readonly offersService: OffersService,
+    private readonly usersService: UsersService,
+  ) {}
 
-  @ApiResponse({
-    description: 'Возвращает оффер по указанному id',
-    type: FindOfferDto,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id оффера',
-    example: '1',
-  })
-  @Get(':id')
-  async findOne(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.offersService.findOne({ id });
-  }
-
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Возвращает созданный оффер',
-    type: Offer,
-  })
-  @ApiBody({
-    description: 'Данные оффера',
-    type: CreateOfferRequestDto,
-  })
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(
-    @Req() req: Request & { user: { id: number } },
-    @Body() offer: CreateOfferRequestDto,
+    @Request() req: AuthenticatedRequest,
+    @Body() createOfferDto: CreateOfferDto,
   ): Promise<Offer> {
-    return this.offersService.createOffer(req.user.id, offer);
+    const user = await this.usersService.findById(req.user.userId);
+    return this.offersService.create(createOfferDto, user);
   }
 
-  @ApiResponse({
-    description: 'Возвращает список всех офферов',
-    type: [FindOfferDto],
-  })
+  @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(): Promise<Offer[]> {
-    return this.offersService.findMany({});
+  async findAll(): Promise<offerResponseDto[]> {
+    const offers = await this.offersService.findAll();
+    return plainToInstance(offerResponseDto, offers, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findOne(@Param('id') id: string): Promise<offerResponseDto> {
+    const offer = await this.offersService.findById(+id);
+    return plainToInstance(offerResponseDto, offer, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  update(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateOfferDto: UpdateOfferDto,
+  ): Promise<Offer> {
+    return this.offersService.updateOne(+id, updateOfferDto, req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  remove(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.offersService.removeOne(+id, req.user.userId);
   }
 }

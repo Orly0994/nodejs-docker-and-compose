@@ -4,122 +4,78 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
-  Req,
+  Request,
   UseGuards,
-  HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
-import { WishlistsService } from './wishlists.service';
-import { CreateWishlistRequestDto } from './dto/create-wishlist.dto';
+import { plainToInstance } from 'class-transformer';
+import { AuthenticatedRequest } from 'src/auth/interfaces/authenticated-request.interface';
+import { UsersService } from 'src/users/users.service';
+import { CreateWishlistDto } from './dto/create-wishlist.dto';
 import { UpdateWishlistDto } from './dto/update-wishlist.dto';
-import { FindWishlistDto } from './dto/find-wishlist.dto';
-import { Wishlist } from './entities/wishlist.entity';
-import { JwtGuard } from '../guards/jwt.guard';
-import { NoValidUserResponseDto } from '../users/dto/no-valid-user-response.dto';
-import { Request } from 'express';
+import { WishlistResponseDto } from './dto/wishlist-response.dto';
+import { WishlistsService } from './wishlists.service';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 
-@ApiBearerAuth()
-@ApiTags('wishlistlists')
-@UseGuards(JwtGuard)
-@ApiUnauthorizedResponse({
-  description: 'Unauthorized',
-  type: NoValidUserResponseDto,
-})
-@Controller('wishlistlists')
+@Controller('wishlists')
 export class WishlistsController {
-  constructor(private wishlistsService: WishlistsService) {}
+  constructor(
+    private readonly wishlistsService: WishlistsService,
+    private readonly usersService: UsersService,
+  ) {}
 
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Удаляет вишлист с заданным id',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id вишлиста',
-    example: '1',
-  })
-  @Delete(':id')
-  async removeById(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    await this.wishlistsService.removeWishlist(req.user.id, id);
-  }
-
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Обновляет данные вишлиста с заданным id',
-    type: Wishlist,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id вишлиста',
-    example: '1',
-  })
-  @ApiBody({
-    description: 'Изменяемые данные вишлиста',
-    type: UpdateWishlistDto,
-  })
-  @Patch(':id')
-  async updateById(
-    @Req() req: Request & { user: { id: number } },
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateWishlistDto: UpdateWishlistDto,
-  ) {
-    return this.wishlistsService.updateWishlist(
-      req.user.id,
-      id,
-      updateWishlistDto,
-    );
-  }
-
-  @ApiResponse({
-    description: 'Возвращает вишлист по указанному id',
-    type: FindWishlistDto,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Id вишлиста',
-    example: '1',
-  })
-  @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.wishlistsService.findWishlist(id);
-  }
-
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Возвращает созданный вишлист',
-    type: Wishlist,
-  })
-  @ApiBody({
-    description: 'Данные вишлиста',
-    type: CreateWishlistRequestDto,
-  })
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(
-    @Req() req: Request & { user: { id: number } },
-    @Body() wishlist: CreateWishlistRequestDto,
-  ): Promise<Wishlist> {
-    return this.wishlistsService.createWishlist(req.user.id, wishlist);
+    @Request() req: AuthenticatedRequest,
+    @Body() createWishlistDto: CreateWishlistDto,
+  ) {
+    const user = await this.usersService.findById(req.user.userId);
+    return this.wishlistsService.create(createWishlistDto, user);
   }
 
-  @ApiResponse({
-    description: 'Возвращает список всех вишлистов',
-    type: [Wishlist],
-  })
+  @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(): Promise<Wishlist[]> {
-    return this.wishlistsService.findMany({});
+  async findAll() {
+    const wishlist = await this.wishlistsService.findAll();
+    return plainToInstance(WishlistResponseDto, wishlist, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findOne(@Param('id') id: string): Promise<WishlistResponseDto> {
+    const wishlist = await this.wishlistsService.findById(+id);
+    return plainToInstance(WishlistResponseDto, wishlist, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateWishlistDto: UpdateWishlistDto,
+  ): Promise<WishlistResponseDto> {
+    const wish = await this.wishlistsService.updateOne(
+      +id,
+      updateWishlistDto,
+      req.user.userId,
+    );
+    return plainToInstance(WishlistResponseDto, wish, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  remove(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.wishlistsService.removeOne(+id, req.user.userId);
   }
 }
