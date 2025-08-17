@@ -1,0 +1,52 @@
+version: '3.3'
+
+services:
+  backend:
+    container_name: kupipodariday-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "4000:3000"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+    networks:
+      - kupipodariday-network
+
+  frontend:
+    container_name: kupipodariday-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3001:80"
+    networks:
+      - kupipodariday-network
+
+  postgres:
+    container_name: kupipodariday-db
+    image: postgres:12
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+    env_file:
+      - ./backend/.env
+    environment:
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    expose:
+      - "5432"
+    networks:
+      - kupipodariday-network
+
+networks:
+  kupipodariday-network:
+    driver: bridge
+
+volumes:
+  postgres_data: 
